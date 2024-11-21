@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import app.akiho.media_compressor.extension.displayDate
+import app.akiho.media_compressor.extension.megaBytes
 import app.akiho.media_compressor.infra.compressor.CompressedResult
 import app.akiho.media_compressor.model.LocalAsset
 import app.akiho.media_compressor.ui.component.AssetViewer
@@ -230,6 +231,8 @@ fun CompressedDialog(v: CompressedResult, onClose: () -> Unit) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(vertical = 32.dp)) {
+              Text(
+                  "prev: ${v.prevSize.megaBytes()}MB -> compressed: ${v.compressedSize.megaBytes()}MB")
               Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 ImageView(
                     url = v.uri,
