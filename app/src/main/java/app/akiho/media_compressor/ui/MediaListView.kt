@@ -12,18 +12,22 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,11 +45,14 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import app.akiho.media_compressor.extension.displayDate
+import app.akiho.media_compressor.infra.compressor.CompressedResult
 import app.akiho.media_compressor.model.LocalAsset
 import app.akiho.media_compressor.ui.component.AssetViewer
 import app.akiho.media_compressor.ui.component.AssetViewerResource
 import app.akiho.media_compressor.ui.component.CustomModalBottomSheet
 import app.akiho.media_compressor.ui.component.CustomSpacer
+import app.akiho.media_compressor.ui.component.ErrorDialog
+import app.akiho.media_compressor.ui.component.Hud
 import app.akiho.media_compressor.ui.component.ImageView
 import app.akiho.media_compressor.ui.component.Spacer12
 import app.akiho.media_compressor.ui.component.Spacer20
@@ -59,11 +66,15 @@ fun MediaListView(viewModel: MediaListViewModel = hiltViewModel()) {
   val displayMetrics = context.resources.displayMetrics
   val density = displayMetrics.density
   val windowWidth = displayMetrics.widthPixels / density
-  val assets by viewModel.localAssets.collectAsState()
+  val assets by viewModel.assets.collectAsState()
+  val selected by viewModel.selected.collectAsState()
+  val showHud by viewModel.observeShowHud.collectAsState()
+  val error by viewModel.observeError.collectAsState()
+  val compressed by viewModel.compressed.collectAsState()
   var hasImagePermission by remember { mutableStateOf(false) }
   var hasVideoPermission by remember { mutableStateOf(false) }
   val showAssetViewer = remember { mutableStateOf(false) }
-  var selectAsset by remember { mutableStateOf<LocalAsset?>(null) }
+  var detailAsset by remember { mutableStateOf<LocalAsset?>(null) }
   val listState = rememberLazyListState()
   val coroutineScope = rememberCoroutineScope()
 
@@ -74,7 +85,7 @@ fun MediaListView(viewModel: MediaListViewModel = hiltViewModel()) {
             hasVideoPermission = permissions[Manifest.permission.READ_MEDIA_VIDEO] ?: false
 
             if (hasImagePermission || hasVideoPermission) {
-              viewModel.loadLocalAssets()
+              viewModel.load()
             }
           }
 
@@ -88,7 +99,7 @@ fun MediaListView(viewModel: MediaListViewModel = hiltViewModel()) {
             PackageManager.PERMISSION_GRANTED
 
     if (hasImagePermission || hasVideoPermission) {
-      viewModel.loadLocalAssets()
+      viewModel.load()
     }
 
     val permissionsToRequest = mutableListOf<String>()
@@ -103,12 +114,19 @@ fun MediaListView(viewModel: MediaListViewModel = hiltViewModel()) {
     if (permissionsToRequest.isNotEmpty()) {
       requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
     }
+
+    viewModel.initialize()
   }
 
   Scaffold(
       topBar = {
         TopAppBar(
             title = { Text(text = "メディア") },
+            actions = {
+              TextButton(enabled = selected != null, onClick = { viewModel.compress() }) {
+                Text(text = "圧縮")
+              }
+            },
         )
       },
       content = { innerPadding ->
@@ -134,10 +152,21 @@ fun MediaListView(viewModel: MediaListViewModel = hiltViewModel()) {
                                 url = asset.url,
                                 modifier =
                                     Modifier.size((windowWidth / 3).dp).clickable {
-                                      selectAsset = asset
+                                      detailAsset = asset
                                       showAssetViewer.value = true
                                     },
                                 contentScale = ContentScale.Crop)
+
+                            Checkbox(
+                                checked = selected == asset,
+                                onCheckedChange = { v ->
+                                  if (v) {
+                                    viewModel.select(asset)
+                                  } else {
+                                    viewModel.select(null)
+                                  }
+                                },
+                                modifier = Modifier.align(Alignment.TopEnd))
 
                             asset.videoDurationSecond?.let { second ->
                               AssistChip(
@@ -165,24 +194,49 @@ fun MediaListView(viewModel: MediaListViewModel = hiltViewModel()) {
           CustomModalBottomSheet(showBottomSheet = showAssetViewer, withHeader = false) {
             AssetViewer(
                 items = assets.fold(listOf()) { acc, bundle -> acc + bundle.items },
-                current = selectAsset!!,
+                current = detailAsset!!,
                 getResource = { v ->
                   AssetViewerResource(
                       url = v.url,
                       isVideo = v.isVideo,
                       videoStartSecond = 0,
                       videoEndSecond = 15,
-                      isSelected = false)
+                      isSelected = selected == v)
                 },
-                onSelect = {},
+                onSelect = { viewModel.select(it) },
                 onChange = { v ->
                   val index = assets.indexOfFirst { it.items.contains(v) }
                   coroutineScope.launch { listState.animateScrollToItem(index) }
                 }) {
-                  selectAsset = null
+                  detailAsset = null
                   showAssetViewer.value = false
                 }
           }
+
+          Hud(isLoading = showHud)
+          ErrorDialog(error = error)
+
+          compressed?.let { CompressedDialog(it) { viewModel.clear() } }
         }
       })
+}
+
+@Composable
+fun CompressedDialog(v: CompressedResult, onClose: () -> Unit) {
+  AlertDialog(
+      onDismissRequest = { onClose() },
+      title = { Text(text = "圧縮が完了しました") },
+      text = {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(vertical = 32.dp)) {
+              Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                ImageView(
+                    url = v.uri,
+                    modifier = Modifier.align(Alignment.Center),
+                    contentScale = ContentScale.FillWidth)
+              }
+            }
+      },
+      confirmButton = { TextButton(onClick = { onClose() }) { Text("OK") } })
 }
