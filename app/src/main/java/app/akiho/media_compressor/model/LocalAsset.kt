@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.exifinterface.media.ExifInterface
+import java.util.Calendar
 import java.util.Date
 
 data class LocalAsset(
@@ -56,3 +57,24 @@ data class LatLng(val lat: Double, val lng: Double) {
 }
 
 data class Size(val width: Double, val height: Double)
+
+data class DateGroup<T : HasDate>(val date: Date, val items: List<T>) {
+  companion object {
+    fun <T : HasDate> from(items: List<T>): List<DateGroup<T>> {
+      return items
+          .groupBy { item ->
+            val calendar =
+                Calendar.getInstance().apply {
+                  time = item.mustDate()
+                  set(Calendar.HOUR_OF_DAY, 0)
+                  set(Calendar.MINUTE, 0)
+                  set(Calendar.SECOND, 0)
+                  set(Calendar.MILLISECOND, 0)
+                }
+            calendar.time
+          }
+          .map { (date, items) -> DateGroup(date, items) }
+          .sortedByDescending { it.date }
+    }
+  }
+}
