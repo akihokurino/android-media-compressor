@@ -128,9 +128,6 @@ fun <T> AssetViewer(
                   VideoView(
                       url = resource.url,
                       modifier = Modifier.fillMaxWidth(),
-                      isMute = true,
-                      startSeconds = resource.videoStartSecond?.toLong() ?: 0,
-                      endSeconds = resource.videoEndSecond?.toLong() ?: 15,
                       isShowDuration = false)
                 } else {
                   val isVisible = pagerState.currentPage == index
@@ -145,13 +142,7 @@ fun <T> AssetViewer(
       })
 }
 
-data class AssetViewerResource(
-    val url: Uri,
-    val isVideo: Boolean,
-    val videoStartSecond: Int?,
-    val videoEndSecond: Int?,
-    val isSelected: Boolean = false
-)
+data class AssetViewerResource(val url: Uri, val isVideo: Boolean, val isSelected: Boolean = false)
 
 data class AssetViewerMenu(
     val title: String,

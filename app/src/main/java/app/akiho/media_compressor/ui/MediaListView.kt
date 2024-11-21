@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -57,6 +56,7 @@ import app.akiho.media_compressor.ui.component.Hud
 import app.akiho.media_compressor.ui.component.ImageView
 import app.akiho.media_compressor.ui.component.Spacer12
 import app.akiho.media_compressor.ui.component.Spacer20
+import app.akiho.media_compressor.ui.component.VideoView
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -197,12 +197,7 @@ fun MediaListView(viewModel: MediaListViewModel = hiltViewModel()) {
                 items = assets.fold(listOf()) { acc, bundle -> acc + bundle.items },
                 current = detailAsset!!,
                 getResource = { v ->
-                  AssetViewerResource(
-                      url = v.url,
-                      isVideo = v.isVideo,
-                      videoStartSecond = 0,
-                      videoEndSecond = 15,
-                      isSelected = selected == v)
+                  AssetViewerResource(url = v.url, isVideo = v.isVideo, isSelected = selected == v)
                 },
                 onSelect = { viewModel.select(it) },
                 onChange = { v ->
@@ -228,18 +223,21 @@ fun CompressedDialog(v: CompressedResult, onClose: () -> Unit) {
       onDismissRequest = { onClose() },
       title = { Text(text = "圧縮が完了しました") },
       text = {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(vertical = 32.dp)) {
-              Text(
-                  "prev: ${v.prevSize.megaBytes()}MB -> compressed: ${v.compressedSize.megaBytes()}MB")
-              Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                ImageView(
-                    url = v.uri,
-                    modifier = Modifier.align(Alignment.Center),
-                    contentScale = ContentScale.FillWidth)
-              }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+          Text("${v.originalSize.megaBytes()}MB -> ${v.compressedSize.megaBytes()}MB")
+          Spacer12()
+          Box(contentAlignment = Alignment.Center) {
+            if (v.isVideo) {
+              VideoView(
+                  url = v.uri, modifier = Modifier.align(Alignment.Center), isShowDuration = false)
+            } else {
+              ImageView(
+                  url = v.uri,
+                  modifier = Modifier.align(Alignment.Center),
+                  contentScale = ContentScale.FillWidth)
             }
+          }
+        }
       },
       confirmButton = { TextButton(onClick = { onClose() }) { Text("OK") } })
 }

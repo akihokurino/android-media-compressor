@@ -11,15 +11,15 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import app.akiho.media_compressor.model.AppError
 import com.arthenica.ffmpegkit.FFmpegKit
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 import javax.inject.Inject
 import kotlin.coroutines.resume
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 
 class CompressorClient
 @Inject
@@ -30,7 +30,7 @@ constructor(
       withContext(Dispatchers.IO) {
         suspendCancellableCoroutine { continuation ->
           val androidBitmap = image.asAndroidBitmap()
-          val prevSize = androidBitmap.allocationByteCount.toLong()
+          val originalSize = androidBitmap.allocationByteCount.toLong()
           val data = compressBitmap(resizeBitmap(androidBitmap))
           if (data.size > 2 * 1024 * 1024) {
             continuation.resume(Result.failure(AppError.Plain("Unable to compress image below2MB")))
@@ -46,7 +46,7 @@ constructor(
               Result.success(
                   CompressedResult(
                       uri = compressedUri,
-                      prevSize = prevSize,
+                      originalSize = originalSize,
                       compressedSize = compressedSize,
                       isVideo = false)))
         }
@@ -56,7 +56,7 @@ constructor(
       withContext(Dispatchers.IO) {
         suspendCancellableCoroutine { continuation ->
           if (videoDuration != null) {
-            val prevSize = getUriDataSize(context, localUrl)
+            val originalSize = getUriDataSize(context, localUrl)
             val targetSizeInBytes = 2 * 1024 * 1024
             val targetBitrate = (targetSizeInBytes * 8 / videoDuration).toInt()
             val tempFile = File(context.cacheDir, "compressed_video.mp4")
@@ -75,7 +75,7 @@ constructor(
                         Result.success(
                             CompressedResult(
                                 uri = compressedUri,
-                                prevSize = prevSize,
+                                originalSize = originalSize,
                                 compressedSize = compressedSize,
                                 isVideo = true)))
                   } else {
@@ -85,7 +85,7 @@ constructor(
                 { log -> Log.d("ffmpegLog", log.message) }) {}
           } else {
             try {
-              val prevSize = getUriDataSize(context, localUrl)
+              val originalSize = getUriDataSize(context, localUrl)
               val inputStream =
                   context.contentResolver.openInputStream(localUrl)
                       ?: throw AppError.Plain("Failed to open input stream for URI: $localUrl")
@@ -106,7 +106,7 @@ constructor(
                   Result.success(
                       CompressedResult(
                           uri = compressedUri,
-                          prevSize = prevSize,
+                          originalSize = originalSize,
                           compressedSize = compressedSize,
                           isVideo = false)))
             } catch (e: Exception) {
@@ -117,18 +117,15 @@ constructor(
       }
 
   private fun resizeBitmap(bitmap: Bitmap): Bitmap {
-    val resizedBitmap =
-        if (bitmap.width >= 2000 || bitmap.height >= 2000) {
-          val maxDimension = maxOf(bitmap.width, bitmap.height)
-          val scale = maxDimension / 1000
-          val newWidth = bitmap.width / scale
-          val newHeight = bitmap.height / scale
-          Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
-        } else {
-          bitmap
-        }
-
-    return resizedBitmap
+    return if (bitmap.width >= 2000 || bitmap.height >= 2000) {
+      val maxDimension = maxOf(bitmap.width, bitmap.height)
+      val scale = maxDimension / 1000
+      val newWidth = bitmap.width / scale
+      val newHeight = bitmap.height / scale
+      Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+    } else {
+      bitmap
+    }
   }
 
   private fun compressBitmap(bitmap: Bitmap): ByteArray {
@@ -141,7 +138,6 @@ constructor(
       data = outputStream.toByteArray()
       quality -= 5
     } while (data.size > 2 * 1024 * 1024 && quality > 0)
-
     return data
   }
 
@@ -160,15 +156,14 @@ constructor(
       val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
       inputStream?.use { it.available().toLong() } ?: 0L
     } catch (e: Exception) {
-      e.printStackTrace()
       0L
     }
   }
 }
 
 data class CompressedResult(
-    val uri: Uri,
-    val prevSize: Long,
-    val compressedSize: Long,
-    val isVideo: Boolean
+  val uri: Uri,
+  val originalSize: Long,
+  val compressedSize: Long,
+  val isVideo: Boolean
 )
