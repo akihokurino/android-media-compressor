@@ -21,6 +21,8 @@ import java.io.InputStream
 import javax.inject.Inject
 import kotlin.coroutines.resume
 
+const val maxSize = 2 * 1024 * 1024;
+
 class CompressorClient
 @Inject
 constructor(
@@ -32,7 +34,7 @@ constructor(
           val androidBitmap = image.asAndroidBitmap()
           val originalSize = androidBitmap.allocationByteCount.toLong()
           val data = compressBitmap(resizeBitmap(androidBitmap))
-          if (data.size > 2 * 1024 * 1024) {
+          if (data.size > maxSize) {
             continuation.resume(Result.failure(AppError.Plain("Unable to compress image below2MB")))
             return@suspendCancellableCoroutine
           }
@@ -57,7 +59,7 @@ constructor(
         suspendCancellableCoroutine { continuation ->
           if (videoDuration != null) {
             val originalSize = getUriDataSize(context, localUrl)
-            val targetSizeInBytes = 2 * 1024 * 1024
+            val targetSizeInBytes = maxSize
             val targetBitrate = (targetSizeInBytes * 8 / videoDuration).toInt()
             val tempFile = File(context.cacheDir, "compressed_video.mp4")
             val filePath = getFilePathFromUri(context, localUrl)
@@ -71,6 +73,11 @@ constructor(
                   if (returnCode.isValueSuccess) {
                     val compressedUri = Uri.fromFile(tempFile)
                     val compressedSize = getUriDataSize(context, compressedUri)
+                    if (compressedSize > maxSize) {
+                      continuation.resume(Result.failure(AppError.Plain("Unable to compress video below2MB")))
+                      return@executeAsync
+                    }
+
                     continuation.resume(
                         Result.success(
                             CompressedResult(
@@ -91,7 +98,7 @@ constructor(
                       ?: throw AppError.Plain("Failed to open input stream for URI: $localUrl")
               val bitmap = BitmapFactory.decodeStream(inputStream)
               val data = compressBitmap(resizeBitmap(bitmap))
-              if (data.size > 2 * 1024 * 1024) {
+              if (data.size > maxSize) {
                 continuation.resume(
                     Result.failure(AppError.Plain("Unable to compress image below 2MB")))
                 return@suspendCancellableCoroutine
@@ -137,7 +144,7 @@ constructor(
       bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
       data = outputStream.toByteArray()
       quality -= 5
-    } while (data.size > 2 * 1024 * 1024 && quality > 0)
+    } while (data.size > maxSize && quality > 0)
     return data
   }
 
@@ -152,12 +159,8 @@ constructor(
   }
 
   private fun getUriDataSize(context: Context, uri: Uri): Long {
-    return try {
-      val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
-      inputStream?.use { it.available().toLong() } ?: 0L
-    } catch (e: Exception) {
-      0L
-    }
+    val inputStream: InputStream = context.contentResolver.openInputStream(uri) ?: throw AppError.Plain("Failed to open input stream for URI: $uri")
+    return inputStream.use { it.available().toLong() }
   }
 }
 
